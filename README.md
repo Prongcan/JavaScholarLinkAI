@@ -1,1 +1,1 @@
-# SE-Program-PaperIgnition
+# SE-Program-ScholarLinkAI
