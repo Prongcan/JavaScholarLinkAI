@@ -25,6 +25,7 @@ pip install -r requirements.txt
 ### 2. 启动服务
 
 ```bash
+cd backend
 python app.py
 ```
 
