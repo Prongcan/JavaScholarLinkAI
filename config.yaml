@@ -1,0 +1,27 @@
+# ScholarLinkAI configuration
+
+app:
+  host: 0.0.0.0
+  port: 3001
+  debug: true
+  env: development
+
+api:
+  title: ScholarLink AI API
+  version: 1.0.0
+  description: ScholarLink AI 后端服务 API
+
+# Database configuration (MySQL)
+database:
+  engine: mysql
+  host: localhost
+  port: 3306
+  name: scholarlink_ai
+  user: root
+  password: "111111"
+  charset: utf8mb4
+
+jwt:
+  secret_key: your_jwt_secret_key
+  access_token_expires: 86400  # 24 hours
+
