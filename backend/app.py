@@ -10,6 +10,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import Config
 from api_router.hello_routes import hello_bp
+from api_router.papers_routes import papers_ns
+from api_router.users_routes import users_ns
 
 def create_app():
     """创建Flask应用实例"""
@@ -33,6 +35,12 @@ def create_app():
     
     # 创建命名空间
     hello_ns = api.namespace('hello', description='Hello World API 接口')
+    
+    # 注册 papers 命名空间
+    api.add_namespace(papers_ns, path='/papers')
+    
+    # 注册 users 命名空间
+    api.add_namespace(users_ns, path='/users')
     
     # 定义数据模型
     hello_model = api.model('HelloResponse', {

@@ -1,6 +1,12 @@
 """
 快速测试脚本 - 交互式验证
 """
+import sys
+import os
+
+# 添加父目录到路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from datetime import datetime, timedelta
 from service.fetch_papers import PaperFetchService
 
