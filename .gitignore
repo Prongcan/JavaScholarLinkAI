@@ -46,6 +46,7 @@ frontend/.cache/
 # Secrets & local configs
 .env
 .env.*
+config.yaml
 
 # DB dumps
 *.sql
