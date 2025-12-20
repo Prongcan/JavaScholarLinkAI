@@ -4,6 +4,20 @@ import './Explore.css'
 const Explore = () => {
   const [blogs, setBlogs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [helloMessage, setHelloMessage] = useState('')
+
+  // 获取 Hello World 消息
+  useEffect(() => {
+    fetch('http://127.0.0.1:3001/api/hello/')
+      .then(response => response.json())
+      .then(data => {
+        setHelloMessage(data.message)
+      })
+      .catch(error => {
+        console.error('Error fetching hello message:', error)
+        setHelloMessage('无法从后端加载消息。')
+      })
+  }, [])
 
   // 模拟从 API 获取博客数据
   useEffect(() => {
@@ -64,6 +78,7 @@ const Explore = () => {
     <div className="explore-container">
       <div className="explore-header">
         <h1>探索论文</h1>
+        <h2>{helloMessage}</h2>
         <p>发现最新的学术研究成果和前沿技术</p>
       </div>
       
