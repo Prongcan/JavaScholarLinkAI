@@ -1,0 +1,58 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs, temp, caches
+*.log
+logs/
+tmp/
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.pytype/
+.pyright/
+.ruff_cache/
+
+# Build/dist
+build/
+dist/
+*.egg-info/
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.next/
+frontend/.cache/
+
+# Secrets & local configs
+.env
+.env.*
+config.yaml
+
+# DB dumps
+*.sql
+*.sqlite
+*.sqlite3
+
+# Optional: ignore package markers (you requested to ignore __init__)
+**/__init__.py
+
