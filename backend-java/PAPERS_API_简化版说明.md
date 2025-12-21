@@ -1,22 +1,22 @@
-# Papers API 使用说明（适配现有数据库）
+# Papers API 使用说明（Java Spring Boot 版本）
 
 ## 📋 数据库结构
 
-本 API 适配你现有的 MySQL 数据库结构：
+本 API 适配现有的 MySQL 数据库结构：
 
 ```sql
 -- papers 表
 paper_id    INT (主键, 自增)
-title       VARCHAR
-author      VARCHAR  
+title       VARCHAR(1000)
+author      VARCHAR(1000)  
 abstract    TEXT
-pdf_url     VARCHAR
+pdf_url     VARCHAR(512)
 
 -- users 表  
 user_id     INT (主键, 自增)
 username    VARCHAR
 password    VARCHAR
-interest    VARCHAR
+interest    TEXT
 
 -- recommendations 表
 user_id     INT
@@ -28,41 +28,36 @@ blog        TEXT
 
 ### 1. 确保数据库已创建
 
-在 DBeaver 中确认 `scholarlink_ai` 数据库已创建，且包含 `papers` 表。
+在 MySQL 中确认 `scholarlink_ai` 数据库已创建，且包含 `papers` 表。
 
 ### 2. 配置数据库连接
 
-编辑 `backend/config.py` 或创建 `.env` 文件：
+编辑 `src/main/resources/application.yml`：
 
-```env
-DATABASE_HOST=localhost
-DATABASE_PORT=3306
-DATABASE_NAME=scholarlink_ai
-DATABASE_USER=root
-DATABASE_PASSWORD=your_password
+```yaml
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/scholarlink_ai?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    username: root
+    password: your_password
 ```
 
-### 3. 安装依赖
+### 3. 启动服务
 
-```bash
-pip install -r backend/requirements.txt
-```
-
-### 4. 启动服务
-
-```bash
-python backend/app.py
+```powershell
+cd backend-java
+.\mvnw.cmd spring-boot:run
 ```
 
 服务启动在 http://localhost:3001
 
-### 5. 测试 API
+### 4. 测试 API
 
 ```bash
 # 抓取论文并保存（抓取 10 篇用于测试）
 curl -X POST http://localhost:3001/api/papers/fetch \
   -H "Content-Type: application/json" \
-  -d '{"max_results": 10}'
+  -d "{\"max_results\": 10}"
 
 # 查看论文列表
 curl http://localhost:3001/api/papers/list
@@ -149,7 +144,7 @@ curl "http://localhost:3001/api/papers/list?page=2&page_size=10"
 }
 ```
 
-### 3. GET /api/papers/<paper_id>
+### 3. GET /api/papers/{paperId}
 获取论文详情
 
 **示例**:
@@ -179,7 +174,7 @@ curl http://localhost:3001/api/papers/1
 ```
 用户调用 POST /api/papers/fetch
          ↓
-1. 调用 PaperFetchService.fetch_papers()
+1. 调用 PaperFetchService.fetchPapers()
    - 从 arXiv API 抓取论文数据
    - 返回包含完整元数据的论文列表
          ↓
@@ -188,56 +183,87 @@ curl http://localhost:3001/api/papers/1
    - 将 authors 列表转为字符串（用逗号分隔）
    - 只提取需要的字段：title, author, abstract, pdf_url
          ↓
-3. 使用 DbManager.execute() 插入数据库
-   - INSERT INTO papers (title, author, abstract, pdf_url)
+3. 使用 PaperRepository.save() 插入数据库
+   - Spring Data JPA 自动处理 INSERT
          ↓
 返回统计结果（抓取数、保存数、失败数）
 ```
 
-## 🐍 Python 使用示例
+## ☕ Java 使用示例
 
-```python
-import requests
+```java
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import java.util.Map;
+import java.util.HashMap;
 
-BASE_URL = "http://localhost:3001/api"
+RestTemplate restTemplate = new RestTemplate();
+String baseUrl = "http://localhost:3001/api";
 
-# 1. 抓取并保存论文
-print("正在抓取论文...")
-response = requests.post(
-    f"{BASE_URL}/papers/fetch",
-    json={"max_results": 20}
-)
-result = response.json()
-print(f"✅ {result['message']}")
-print(f"   保存了 {result['data']['saved_count']} 篇论文")
+// 1. 抓取并保存论文
+System.out.println("正在抓取论文...");
+Map<String, Integer> fetchRequest = new HashMap<>();
+fetchRequest.put("max_results", 20);
 
-# 2. 获取论文列表
-print("\n获取论文列表...")
-response = requests.get(f"{BASE_URL}/papers/list?page=1&page_size=5")
-papers = response.json()['data']['papers']
+HttpHeaders headers = new HttpHeaders();
+headers.set("Content-Type", "application/json");
+HttpEntity<Map<String, Integer>> fetchEntity = new HttpEntity<>(fetchRequest, headers);
 
-print(f"共 {len(papers)} 篇论文:")
-for paper in papers:
-    print(f"  [{paper['paper_id']}] {paper['title']}")
-    print(f"      作者: {paper['author']}")
-    print(f"      PDF: {paper['pdf_url']}")
+ResponseEntity<Map> fetchResponse = restTemplate.postForEntity(
+    baseUrl + "/papers/fetch",
+    fetchEntity,
+    Map.class
+);
+Map<String, Object> fetchData = (Map<String, Object>) fetchResponse.getBody().get("data");
+System.out.println("✅ " + fetchResponse.getBody().get("message"));
+System.out.println("   保存了 " + fetchData.get("saved_count") + " 篇论文");
 
-# 3. 获取论文详情
-if papers:
-    paper_id = papers[0]['paper_id']
-    print(f"\n获取论文详情 (ID={paper_id})...")
-    response = requests.get(f"{BASE_URL}/papers/{paper_id}")
-    detail = response.json()['data']['paper']
-    print(f"  标题: {detail['title']}")
-    print(f"  摘要: {detail['abstract'][:100]}...")
+// 2. 获取论文列表
+System.out.println("\n获取论文列表...");
+ResponseEntity<Map> listResponse = restTemplate.getForEntity(
+    baseUrl + "/papers/list?page=1&page_size=5",
+    Map.class
+);
+Map<String, Object> listData = (Map<String, Object>) listResponse.getBody().get("data");
+@SuppressWarnings("unchecked")
+java.util.List<Map<String, Object>> papers = 
+    (java.util.List<Map<String, Object>>) listData.get("papers");
+
+System.out.println("共 " + papers.size() + " 篇论文:");
+for (Map<String, Object> paper : papers) {
+    System.out.println("  [" + paper.get("paper_id") + "] " + paper.get("title"));
+    System.out.println("      作者: " + paper.get("author"));
+    System.out.println("      PDF: " + paper.get("pdf_url"));
+}
+
+// 3. 获取论文详情
+if (!papers.isEmpty()) {
+    Integer paperId = (Integer) papers.get(0).get("paper_id");
+    System.out.println("\n获取论文详情 (ID=" + paperId + ")...");
+    ResponseEntity<Map> detailResponse = restTemplate.getForEntity(
+        baseUrl + "/papers/" + paperId,
+        Map.class
+    );
+    Map<String, Object> detailData = (Map<String, Object>) detailResponse.getBody().get("data");
+    Map<String, Object> paper = (Map<String, Object>) detailData.get("paper");
+    System.out.println("  标题: " + paper.get("title"));
+    String abstractText = (String) paper.get("abstract");
+    if (abstractText != null && abstractText.length() > 100) {
+        System.out.println("  摘要: " + abstractText.substring(0, 100) + "...");
+    }
+}
 ```
 
 ## 🧪 测试
 
 运行测试脚本：
 
-```bash
-python backend/test/test_papers_api.py
+```powershell
+cd backend-java
+.\mvnw.cmd test -Dtest=PaperControllerTest
 ```
 
 测试脚本会：
@@ -249,9 +275,9 @@ python backend/test/test_papers_api.py
 
 ## 📊 数据映射
 
-从 `fetch_papers` 返回的数据 → 数据库字段：
+从 `PaperFetchService` 返回的数据 → 数据库字段：
 
-| fetch_papers 返回 | 数据库字段 | 转换说明 |
+| fetchPapers 返回 | 数据库字段 | 转换说明 |
 |------------------|-----------|---------|
 | title | title | 直接保存 |
 | authors (列表) | author | 用逗号分隔，转为字符串 |
@@ -298,11 +324,11 @@ http://localhost:3001/docs/
 
 ### 问题：数据库连接失败
 - 检查 MySQL 服务是否启动
-- 检查 `config.py` 或 `.env` 中的数据库配置
+- 检查 `application.yml` 中的数据库配置
 - 确认数据库用户名和密码正确
 
 ### 问题：papers 表不存在
-- 在 DBeaver 中手动创建表：
+- 在 MySQL 中手动创建表：
 ```sql
 CREATE TABLE papers (
     paper_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -313,10 +339,23 @@ CREATE TABLE papers (
 );
 ```
 
+或使用提供的 SQL 脚本：
+```powershell
+# 运行数据库初始化脚本
+.\init-database.ps1
+```
+
 ### 问题：抓取失败
 - 检查网络连接
 - 确认能访问 arXiv API
 - 查看服务日志了解详细错误
+
+### 问题：端口被占用
+```yaml
+# 在 application.yml 中修改端口
+server:
+  port: 3002  # 或其他可用端口
+```
 
 ## 🎉 完成！
 
@@ -329,11 +368,33 @@ CREATE TABLE papers (
 - ✅ RESTful API 接口
 - ✅ 自动去重
 - ✅ Swagger 文档
+- ✅ Spring Data JPA 数据访问
 
 **一键抓取论文**:
 ```bash
 curl -X POST http://localhost:3001/api/papers/fetch \
   -H "Content-Type: application/json" \
-  -d '{"max_results": 50}'
+  -d "{\"max_results\": 50}"
+```
+
+## 📁 文件结构
+
+```
+backend-java/
+├── src/main/java/com/scholarlink/
+│   ├── controller/
+│   │   └── PaperController.java         ← 论文 API
+│   ├── entity/
+│   │   └── Paper.java                   ← 论文实体
+│   ├── repository/
+│   │   └── PaperRepository.java         ← 数据访问层
+│   └── service/
+│       └── PaperFetchService.java       ← 论文抓取服务
+├── src/test/java/com/scholarlink/
+│   ├── controller/
+│   │   └── PaperControllerTest.java     ← 论文 API 测试
+│   └── repository/
+│       └── PaperRepositoryTest.java     ← Repository 测试
+└── PAPERS_API_简化版说明.md            ← 本文档
 ```
 
