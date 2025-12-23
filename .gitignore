@@ -46,3 +46,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Local Tomcat
+apache-tomcat-10.1.50/
+# Assignment PDF
+AY202526S1-50002870008-Assignment-C.pdf
