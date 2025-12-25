@@ -1,4 +1,4 @@
-package org.example.javafinal;
+package org.example.data_access_layer;
 
 import java.io.InputStream;
 import java.sql.*;
@@ -16,16 +16,16 @@ public class Dbmanager {
     private String DB_URL;
     private String DB_USER;
     private String DB_PASSWORD;
-    
+
     private Connection connection;
-    
+
     /**
      * 构造函数：从配置文件加载数据库连接信息
      */
     public Dbmanager() {
         loadDatabaseConfig();
     }
-    
+
     /**
      * 从配置文件加载数据库配置
      */
@@ -51,7 +51,7 @@ public class Dbmanager {
             DB_PASSWORD = "Sehun19940412";
         }
     }
-    
+
     /**
      * 获取数据库连接
      */
@@ -66,7 +66,7 @@ public class Dbmanager {
         }
         return connection;
     }
-    
+
     /**
      * 关闭数据库连接
      */
@@ -79,9 +79,9 @@ public class Dbmanager {
             e.printStackTrace();
         }
     }
-    
+
     // ========== Papers 表操作 ==========
-    
+
     /**
      * 插入论文
      */
@@ -93,7 +93,7 @@ public class Dbmanager {
             stmt.setString(3, abstractText);
             stmt.setString(4, pdfUrl);
             stmt.executeUpdate();
-            
+
             try (ResultSet rs = stmt.getGeneratedKeys()) {
                 if (rs.next()) {
                     return rs.getInt(1);
@@ -102,7 +102,7 @@ public class Dbmanager {
         }
         return -1;
     }
-    
+
     /**
      * 根据ID获取论文
      */
@@ -124,7 +124,7 @@ public class Dbmanager {
         }
         return null;
     }
-    
+
     /**
      * 获取所有论文（支持分页）
      */
@@ -148,7 +148,7 @@ public class Dbmanager {
         }
         return papers;
     }
-    
+
     /**
      * 获取论文总数
      */
@@ -162,9 +162,9 @@ public class Dbmanager {
         }
         return 0;
     }
-    
+
     // ========== Users 表操作 ==========
-    
+
     /**
      * 插入用户
      */
@@ -175,7 +175,7 @@ public class Dbmanager {
             stmt.setString(2, password);
             stmt.setString(3, interest);
             stmt.executeUpdate();
-            
+
             try (ResultSet rs = stmt.getGeneratedKeys()) {
                 if (rs.next()) {
                     return rs.getInt(1);
@@ -184,7 +184,7 @@ public class Dbmanager {
         }
         return -1;
     }
-    
+
     /**
      * 根据ID获取用户
      */
@@ -205,7 +205,7 @@ public class Dbmanager {
         }
         return null;
     }
-    
+
     /**
      * 根据用户名获取用户
      */
@@ -226,7 +226,29 @@ public class Dbmanager {
         }
         return null;
     }
-    
+
+    /**
+     * 根据用户名和密码获取用户（用于登录验证）
+     */
+    public Map<String, Object> getUserByUsernameAndPassword(String username, String password) throws SQLException {
+        String sql = "SELECT user_id, username, password, interest FROM users WHERE username = ? AND password = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setString(1, username);
+            stmt.setString(2, password);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Map<String, Object> user = new HashMap<>();
+                    user.put("user_id", rs.getInt("user_id"));
+                    user.put("username", rs.getString("username"));
+                    user.put("password", rs.getString("password"));
+                    user.put("interest", rs.getString("interest"));
+                    return user;
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * 获取所有用户（支持分页）
      */
@@ -249,7 +271,7 @@ public class Dbmanager {
         }
         return users;
     }
-    
+
     /**
      * 更新用户兴趣
      */
@@ -261,7 +283,7 @@ public class Dbmanager {
             return stmt.executeUpdate() > 0;
         }
     }
-    
+
     /**
      * 删除用户
      */
@@ -272,9 +294,9 @@ public class Dbmanager {
             return stmt.executeUpdate() > 0;
         }
     }
-    
+
     // ========== Recommendations 表操作 ==========
-    
+
     /**
      * 插入推荐记录
      */
@@ -287,7 +309,7 @@ public class Dbmanager {
             stmt.setString(3, blog);
             stmt.setString(4, blog);
             stmt.executeUpdate();
-            
+
             try (ResultSet rs = stmt.getGeneratedKeys()) {
                 if (rs.next()) {
                     return rs.getInt(1);
@@ -296,7 +318,7 @@ public class Dbmanager {
         }
         return -1;
     }
-    
+
     /**
      * 获取用户的推荐记录
      */
@@ -325,4 +347,3 @@ public class Dbmanager {
         return recommendations;
     }
 }
-

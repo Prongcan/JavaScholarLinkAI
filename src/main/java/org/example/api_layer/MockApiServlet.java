@@ -1,10 +1,16 @@
-package org.example.javafinal;
+package org.example.api_layer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -13,11 +19,39 @@ import java.util.HashMap;
 import java.util.Map;
 
 @WebServlet(name = "mockApiServlet", value = "/api/mock")
+@Tag(name = "模拟接口", description = "用于测试的模拟 API 接口")
 public class MockApiServlet extends HttpServlet {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
+    @Operation(
+        summary = "模拟接口",
+        description = "根据不同的 action 参数执行相应的模拟操作",
+        parameters = {
+            @Parameter(
+                name = "action",
+                description = "操作类型",
+                required = true,
+                schema = @Schema(
+                    type = "string",
+                    allowableValues = {"readPaper", "uploadPaper", "searchPaper", "deletePaper"}
+                )
+            )
+        },
+        responses = {
+            @ApiResponse(
+                responseCode = "200",
+                description = "操作成功",
+                content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(type = "object")
+                )
+            ),
+            @ApiResponse(responseCode = "400", description = "缺少 action 参数或未知操作"),
+            @ApiResponse(responseCode = "500", description = "服务器内部错误")
+        }
+    )
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");

@@ -1,11 +1,19 @@
-package org.example.javafinal;
+package org.example.api_layer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.data_access_layer.Dbmanager;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -16,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 @WebServlet(name = "papersApi", value = "/api/papers/*")
+@Tag(name = "论文管理", description = "论文相关的 API 操作")
 public class PapersApi extends HttpServlet {
     private Dbmanager dbManager;
     private ObjectMapper objectMapper;
@@ -85,7 +94,18 @@ public class PapersApi extends HttpServlet {
     /**
      * 处理获取论文列表
      */
-    private void handleListPapers(HttpServletRequest request, HttpServletResponse response, 
+    @Operation(
+        summary = "获取论文列表",
+        description = "分页获取所有论文列表",
+        parameters = {
+            @Parameter(name = "page", description = "页码", schema = @Schema(type = "integer", defaultValue = "1")),
+            @Parameter(name = "page_size", description = "每页大小", schema = @Schema(type = "integer", defaultValue = "10"))
+        },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "成功获取论文列表")
+        }
+    )
+    private void handleListPapers(HttpServletRequest request, HttpServletResponse response,
                                    PrintWriter out) throws SQLException, IOException {
         String pageParam = request.getParameter("page");
         String pageSizeParam = request.getParameter("page_size");
@@ -113,7 +133,18 @@ public class PapersApi extends HttpServlet {
     /**
      * 处理获取论文详情
      */
-    private void handleGetPaper(int paperId, HttpServletResponse response, 
+    @Operation(
+        summary = "获取论文详情",
+        description = "根据论文 ID 获取论文详细信息",
+        parameters = {
+            @Parameter(name = "paperId", description = "论文 ID", required = true, schema = @Schema(type = "integer"))
+        },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "成功获取论文详情"),
+            @ApiResponse(responseCode = "404", description = "论文不存在")
+        }
+    )
+    private void handleGetPaper(int paperId, HttpServletResponse response,
                                 PrintWriter out) throws SQLException, IOException {
         Map<String, Object> paper = dbManager.getPaperById(paperId);
         
@@ -134,7 +165,22 @@ public class PapersApi extends HttpServlet {
     /**
      * 处理抓取论文
      */
-    private void handleFetchPaper(HttpServletRequest request, HttpServletResponse response, 
+    @Operation(
+        summary = "抓取论文",
+        description = "添加新的论文到数据库",
+        requestBody = @RequestBody(
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(type = "object")
+            )
+        ),
+        responses = {
+            @ApiResponse(responseCode = "200", description = "论文抓取成功"),
+            @ApiResponse(responseCode = "400", description = "请求参数错误"),
+            @ApiResponse(responseCode = "500", description = "服务器内部错误")
+        }
+    )
+    private void handleFetchPaper(HttpServletRequest request, HttpServletResponse response,
                                   PrintWriter out) throws IOException, SQLException {
         BufferedReader reader = request.getReader();
         StringBuilder jsonBody = new StringBuilder();
