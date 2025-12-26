@@ -107,7 +107,16 @@ public class PapersApi extends HttpServlet {
 
         try {
             int userId = Integer.parseInt(userIdParam);
-            List<Map<String, Object>> recommendations = dbManager.getRecommendationsByUserId(userId);
+            
+            // 获取用户信息以拿到其兴趣
+            Map<String, Object> user = dbManager.getUserById(userId);
+            String interests = "";
+            if (user != null && user.get("interest") != null) {
+                interests = (String) user.get("interest");
+            }
+
+            // 调用新的方法，传入用户兴趣
+            List<Map<String, Object>> recommendations = dbManager.getRecommendationsByUserId(userId, interests);
 
             Map<String, Object> result = new HashMap<>();
             result.put("status", "success");
