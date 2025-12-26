@@ -21,7 +21,7 @@ node_modules/
 .DS_Store
 .idea/
 *.iml
-
+src/main/resources/vector.properties
 ### Eclipse ###
 .apt_generated
 .classpath

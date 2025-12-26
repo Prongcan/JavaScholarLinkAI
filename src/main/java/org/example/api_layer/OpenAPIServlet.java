@@ -328,19 +328,16 @@ public class OpenAPIServlet extends HttpServlet {
                     },
                     "/api/papers/fetch": {
                         "post": {
-                            "summary": "抓取论文",
-                            "description": "添加新的论文到数据库",
+                            "summary": "从arXiv抓取论文",
+                            "description": "从arXiv获取并添加新的论文到数据库",
                             "requestBody": {
                                 "content": {
                                     "application/json": {
                                         "schema": {
                                             "type": "object",
-                                            "required": ["title"],
+                                            "required": ["arxiv_id"],
                                             "properties": {
-                                                "title": {"type": "string", "description": "论文标题"},
-                                                "author": {"type": "string", "description": "论文作者"},
-                                                "abstract": {"type": "string", "description": "论文摘要"},
-                                                "pdf_url": {"type": "string", "description": "PDF 下载链接"}
+                                                "arxiv_id": {"type": "string", "description": "arXiv论文ID", "example": "2301.00001"}
                                             }
                                         }
                                     }
@@ -370,6 +367,203 @@ public class OpenAPIServlet extends HttpServlet {
                                 },
                                 "400": {"description": "请求参数错误"},
                                 "500": {"description": "服务器内部错误"}
+                            }
+                        }
+                    },
+                    "/api/papers/{paperId}/generate-blog": {
+                        "post": {
+                            "summary": "生成博客",
+                            "description": "根据论文内容生成博客文章",
+                            "parameters": [
+                                {
+                                    "name": "paperId",
+                                    "in": "path",
+                                    "required": true,
+                                    "schema": {"type": "integer"},
+                                    "description": "论文ID"
+                                }
+                            ],
+                            "requestBody": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "required": ["user_id"],
+                                            "properties": {
+                                                "user_id": {"type": "integer", "description": "用户ID"}
+                                            }
+                                        }
+                                    }
+                                },
+                                "required": true
+                            },
+                            "responses": {
+                                "200": {
+                                    "description": "博客生成成功",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string", "example": "success"},
+                                                    "message": {"type": "string", "example": "博客生成成功"},
+                                                    "data": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "blog_content": {"type": "string", "description": "生成的博客内容"}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "400": {"description": "请求参数错误"},
+                                "404": {"description": "论文不存在"},
+                                "500": {"description": "服务器内部错误"}
+                            }
+                        }
+                    },
+                    "/api/index/paper": {
+                        "post": {
+                            "summary": "为论文创建向量索引",
+                            "description": "将指定论文的摘要转换为向量并存储到向量数据库中",
+                            "requestBody": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "required": ["paper_id"],
+                                            "properties": {
+                                                "paper_id": {"type": "integer", "description": "论文ID"}
+                                            }
+                                        }
+                                    }
+                                },
+                                "required": true
+                            },
+                            "responses": {
+                                "200": {
+                                    "description": "索引创建成功",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string", "example": "success"},
+                                                    "message": {"type": "string", "example": "论文索引创建成功"},
+                                                    "data": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "paper_id": {"type": "integer"}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "400": {"description": "请求参数错误"},
+                                "404": {"description": "论文不存在"},
+                                "409": {"description": "论文已建立索引"},
+                                "500": {"description": "服务器内部错误"}
+                            }
+                        }
+                    },
+                    "/api/index/paper/{paperId}/status": {
+                        "get": {
+                            "summary": "检查论文索引状态",
+                            "description": "检查指定论文是否已建立向量索引",
+                            "parameters": [
+                                {
+                                    "name": "paperId",
+                                    "in": "path",
+                                    "required": true,
+                                    "schema": {"type": "integer"},
+                                    "description": "论文ID"
+                                }
+                            ],
+                            "responses": {
+                                "200": {
+                                    "description": "查询成功",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string", "example": "success"},
+                                                    "message": {"type": "string", "example": "索引状态查询成功"},
+                                                    "data": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "paper_id": {"type": "integer"},
+                                                            "indexed": {"type": "boolean", "description": "是否已建立索引"}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "500": {"description": "服务器内部错误"}
+                            }
+                        }
+                    },
+                    "/api/orchestrator/fetch": {
+                        "post": {
+                            "summary": "运行Fetch Orchestrator",
+                            "description": "启动Fetch Orchestrator，从arXiv获取最新的计算机科学论文，自动抓取论文信息并创建向量索引",
+                            "responses": {
+                                "200": {
+                                    "description": "Orchestrator启动成功",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string", "example": "success"},
+                                                    "message": {"type": "string", "example": "Fetch Orchestrator started successfully"},
+                                                    "data": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "note": {"type": "string", "description": "处理说明"}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "500": {"description": "Orchestrator启动失败"}
+                            }
+                        }
+                    },
+                    "/api/orchestrator/recommend": {
+                        "post": {
+                            "summary": "运行Recommendation Orchestrator",
+                            "description": "启动Recommendation Orchestrator，基于用户兴趣计算论文相似度并生成个性化推荐博客",
+                            "responses": {
+                                "200": {
+                                    "description": "Orchestrator启动成功",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string", "example": "success"},
+                                                    "message": {"type": "string", "example": "Recommendation Orchestrator started successfully"},
+                                                    "data": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "note": {"type": "string", "description": "处理说明"}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "500": {"description": "Orchestrator启动失败"}
                             }
                         }
                     },

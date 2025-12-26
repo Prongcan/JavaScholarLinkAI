@@ -346,4 +346,71 @@ public class Dbmanager {
         }
         return recommendations;
     }
+
+    /**
+     * 插入论文向量嵌入
+     * @param paperId 论文ID
+     * @param embeddingJson 向量JSON字符串
+     * @param dimension 向量维度
+     * @return 是否成功
+     * @throws SQLException 如果数据库操作失败
+     */
+    public boolean insertPaperEmbedding(int paperId, String embeddingJson, int dimension) throws SQLException {
+        String sql = "INSERT INTO paper_embeddings (paper_id, embedding, dimension, created_at) " +
+                     "VALUES (?, ?, ?, NOW()) " +
+                     "ON DUPLICATE KEY UPDATE embedding = ?, dimension = ?, updated_at = NOW()";
+
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, paperId);
+            stmt.setString(2, embeddingJson);
+            stmt.setInt(3, dimension);
+            stmt.setString(4, embeddingJson);
+            stmt.setInt(5, dimension);
+
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0;
+        }
+    }
+
+    /**
+     * 检查论文是否已建立向量索引
+     * @param paperId 论文ID
+     * @return 是否已建立索引
+     * @throws SQLException 如果数据库查询失败
+     */
+    public boolean isPaperIndexed(int paperId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM paper_embeddings WHERE paper_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, paperId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("count") > 0;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 获取论文向量嵌入
+     * @param paperId 论文ID
+     * @return 向量数据Map，包含embedding和dimension
+     * @throws SQLException 如果数据库查询失败
+     */
+    public Map<String, Object> getPaperEmbedding(int paperId) throws SQLException {
+        String sql = "SELECT embedding, dimension, created_at FROM paper_embeddings WHERE paper_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, paperId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Map<String, Object> embedding = new HashMap<>();
+                    embedding.put("embedding", rs.getString("embedding"));
+                    embedding.put("dimension", rs.getInt("dimension"));
+                    embedding.put("created_at", rs.getTimestamp("created_at"));
+                    return embedding;
+                }
+            }
+        }
+        return null;
+    }
 }
