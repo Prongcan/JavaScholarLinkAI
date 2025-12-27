@@ -237,6 +237,8 @@
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
             gap: 2rem;
             margin-bottom: 2rem;
+            min-height: 200px; /* 设置最小高度避免内容切换时的抖动 */
+            transition: opacity 0.3s ease; /* 添加平滑过渡 */
         }
 
         .paper-card {
@@ -649,6 +651,16 @@
                     <input type="text" id="interest-input" class="form-input" style="margin-top: 5px; margin-bottom: 10px;">
                     <button class="action-btn" onclick="saveInterests()">保存兴趣</button>
                 </div>
+                <div class="user-detail">
+                    <label for="frequency-select" class="user-label">推荐频率：</label>
+                    <select id="frequency-select" class="form-input" style="margin-top: 5px; margin-bottom: 10px;">
+                        <option value="1">每小时一次</option>
+                        <option value="6">每6小时一次</option>
+                        <option value="12">每12小时一次</option>
+                        <option value="24">每天一次</option>
+                    </select>
+                    <button class="action-btn" onclick="saveFrequency()">保存频率</button>
+                </div>
             </div>
         </div>
 
@@ -805,10 +817,8 @@
         async function loadPapers(page = 1) {
             const loadingElement = document.getElementById('papers-loading');
             const gridElement = document.getElementById('papers-grid');
-            
-            loadingElement.style.display = 'block';
-            gridElement.innerHTML = '';
 
+            // 使用淡入淡出效果减少抖动
             if (!currentUser) {
                 loadingElement.style.display = 'none';
                 showError('请先登录以查看推荐内容');
@@ -817,6 +827,10 @@
             }
 
             console.log('Loading recommendations for user:', currentUser.user_id);
+
+            // 开始加载时保持现有内容可见，loading元素淡入
+            loadingElement.style.display = 'block';
+            loadingElement.style.opacity = '0.7';
 
             try {
                 const url = 'api/papers/recommendations?userId=' + currentUser.user_id;
@@ -827,6 +841,8 @@
                 }
 
                 const data = await response.json();
+
+                // 成功获取数据后，先隐藏loading，再更新内容
                 loadingElement.style.display = 'none';
 
                 if (data.status === 'success') {
@@ -844,16 +860,28 @@
         // 显示推荐博客卡片
         function displayPapers(recommendations) {
             const gridElement = document.getElementById('papers-grid');
-            gridElement.innerHTML = ''; // 清空旧内容
+
+            // 先设置透明度为0，准备淡入效果
+            gridElement.style.opacity = '0';
 
             if (!recommendations || recommendations.length === 0) {
                 gridElement.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: #7f8c8d;"><h3>暂无推荐内容</h3><p>系统还没有为您生成任何推荐。</p></div>';
+                // 淡入显示
+                setTimeout(() => {
+                    gridElement.style.opacity = '1';
+                }, 50);
                 return;
             }
+
+            // 创建文档片段来批量添加元素，提高性能
+            const fragment = document.createDocumentFragment();
 
             recommendations.forEach(rec => {
                 const paperCard = document.createElement('div');
                 paperCard.className = 'paper-card';
+                paperCard.style.opacity = '0';
+                paperCard.style.transform = 'translateY(20px)';
+                paperCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
 
                 const title = rec.paper_title || '无标题';
                 const author = rec.paper_author || '未知来源';
@@ -875,8 +903,26 @@
                     </div>
                 `;
 
-                gridElement.appendChild(paperCard);
+                fragment.appendChild(paperCard);
             });
+
+            // 清空并添加新内容
+            gridElement.innerHTML = '';
+            gridElement.appendChild(fragment);
+
+            // 淡入显示网格
+            setTimeout(() => {
+                gridElement.style.opacity = '1';
+
+                // 依次显示每个卡片
+                const cards = gridElement.querySelectorAll('.paper-card');
+                cards.forEach((card, index) => {
+                    setTimeout(() => {
+                        card.style.opacity = '1';
+                        card.style.transform = 'translateY(0)';
+                    }, index * 100); // 每个卡片延迟100ms显示
+                });
+            }, 50);
         }
 
         // 更新分页 - 第一页不显示分页
@@ -895,18 +941,75 @@
                 return;
             }
 
+            // 显示加载状态
+            const papersGrid = document.getElementById('papers-grid');
+            const papersLoading = document.getElementById('papers-loading');
+
+            papersLoading.style.display = 'block';
+            papersGrid.innerHTML = '';
+
             try {
                 const response = await fetch('api/search?q=' + encodeURIComponent(query));
                 const data = await response.json();
 
+                papersLoading.style.display = 'none';
+
                 if (data.status === 'success') {
-                    showError('搜索成功！找到 ' + data.data.results_count + ' 个结果', false);
+                    if (data.data.results_count > 0) {
+                        displaySearchResults(data.data.results);
+                        showError('搜索成功！找到 ' + data.data.results_count + ' 个结果', false);
+                    } else {
+                        papersGrid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: #7f8c8d;"><h3>未找到相关论文</h3><p>尝试使用其他关键词搜索</p></div>';
+                        showError('未找到匹配的论文', false);
+                    }
                 } else {
                     showError('搜索失败：' + data.message);
                 }
             } catch (error) {
+                papersLoading.style.display = 'none';
                 showError('搜索时发生网络错误');
                 console.error('Error searching papers:', error);
+            }
+        }
+
+        // 显示搜索结果
+        function displaySearchResults(results) {
+            const gridElement = document.getElementById('papers-grid');
+            gridElement.innerHTML = '';
+
+            results.forEach(result => {
+                const paperCard = document.createElement('div');
+                paperCard.className = 'paper-card';
+
+                const title = result.title || '无标题';
+                const author = result.author || '未知来源';
+                const abstractText = result.abstract || '';
+                const summary = abstractText.substring(0, 150) + (abstractText.length > 150 ? '...' : '');
+                const pdfUrl = result.pdf_url || '#';
+
+                paperCard.innerHTML = `
+                    <div class="paper-header">
+                        <div class="paper-title">` + escapeHtml(title) + `</div>
+                        <div class="paper-author">作者：` + escapeHtml(author) + `</div>
+                    </div>
+                    <div class="paper-content">
+                        <div class="paper-abstract">` + marked.parse(summary) + `</div>
+                        <div class="paper-actions">
+                            <a href="#" class="action-btn" onclick="viewPaperPdf('` + pdfUrl.replace(/'/g, "\\'") + `')">查看详情</a>
+                        </div>
+                    </div>
+                `;
+
+                gridElement.appendChild(paperCard);
+            });
+        }
+
+        // 查看论文PDF，在新标签页中打开
+        function viewPaperPdf(pdfUrl) {
+            if (pdfUrl && pdfUrl !== '#') {
+                window.open(pdfUrl, '_blank');
+            } else {
+                showError('该论文暂无PDF链接');
             }
         }
 
@@ -947,6 +1050,7 @@
                 if (data.status === 'success') {
                     document.getElementById('user-name').textContent = data.data.username;
                     document.getElementById('interest-input').value = data.data.interest || ''; // Populate input field
+                    document.getElementById('frequency-select').value = data.data.frequency || 24; // Populate frequency select
                     contentElement.style.display = 'block';
                     console.log('User profile loaded successfully');
                 } else {
@@ -991,6 +1095,40 @@
             } catch (error) {
                 showError('网络错误，请稍后重试');
                 console.error('Error saving interests:', error);
+            }
+        }
+
+        async function saveFrequency() {
+            if (!currentUser) {
+                showError('请先登录再保存推荐频率');
+                return;
+            }
+
+            const frequencySelect = document.getElementById('frequency-select');
+            const newFrequency = parseInt(frequencySelect.value);
+            console.log('Saving new frequency:', newFrequency);
+
+            try {
+                const response = await fetch('api/users/' + currentUser.user_id + '/frequency', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        frequency: newFrequency
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showError('推荐频率保存成功！', false);
+                } else {
+                    showError('保存失败：' + data.message);
+                }
+            } catch (error) {
+                showError('网络错误，请稍后重试');
+                console.error('Error saving frequency:', error);
             }
         }
 

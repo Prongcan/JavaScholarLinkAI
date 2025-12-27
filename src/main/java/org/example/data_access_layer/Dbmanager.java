@@ -169,11 +169,12 @@ public class Dbmanager {
      * 插入用户
      */
     public int insertUser(String username, String password, String interest) throws SQLException {
-        String sql = "INSERT INTO users (username, password, interest) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO users (username, password, interest, frequency) VALUES (?, ?, ?, ?)";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             stmt.setString(1, username);
             stmt.setString(2, password);
             stmt.setString(3, interest);
+            stmt.setInt(4, 24); // 默认推荐频率为24小时（一天一次）
             stmt.executeUpdate();
 
             try (ResultSet rs = stmt.getGeneratedKeys()) {
@@ -189,7 +190,7 @@ public class Dbmanager {
      * 根据ID获取用户
      */
     public Map<String, Object> getUserById(int userId) throws SQLException {
-        String sql = "SELECT user_id, username, password, interest FROM users WHERE user_id = ?";
+        String sql = "SELECT user_id, username, password, interest, frequency FROM users WHERE user_id = ?";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setInt(1, userId);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -199,6 +200,7 @@ public class Dbmanager {
                     user.put("username", rs.getString("username"));
                     user.put("password", rs.getString("password"));
                     user.put("interest", rs.getString("interest"));
+                    user.put("frequency", rs.getInt("frequency"));
                     return user;
                 }
             }
@@ -210,7 +212,7 @@ public class Dbmanager {
      * 根据用户名获取用户
      */
     public Map<String, Object> getUserByUsername(String username) throws SQLException {
-        String sql = "SELECT user_id, username, password, interest FROM users WHERE username = ?";
+        String sql = "SELECT user_id, username, password, interest, frequency FROM users WHERE username = ?";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setString(1, username);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -220,6 +222,7 @@ public class Dbmanager {
                     user.put("username", rs.getString("username"));
                     user.put("password", rs.getString("password"));
                     user.put("interest", rs.getString("interest"));
+                    user.put("frequency", rs.getInt("frequency"));
                     return user;
                 }
             }
@@ -231,7 +234,7 @@ public class Dbmanager {
      * 根据用户名和密码获取用户（用于登录验证）
      */
     public Map<String, Object> getUserByUsernameAndPassword(String username, String password) throws SQLException {
-        String sql = "SELECT user_id, username, password, interest FROM users WHERE username = ? AND password = ?";
+        String sql = "SELECT user_id, username, password, interest, frequency FROM users WHERE username = ? AND password = ?";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setString(1, username);
             stmt.setString(2, password);
@@ -242,6 +245,7 @@ public class Dbmanager {
                     user.put("username", rs.getString("username"));
                     user.put("password", rs.getString("password"));
                     user.put("interest", rs.getString("interest"));
+                    user.put("frequency", rs.getInt("frequency"));
                     return user;
                 }
             }
@@ -254,7 +258,7 @@ public class Dbmanager {
      */
     public List<Map<String, Object>> getAllUsers(int page, int pageSize) throws SQLException {
         List<Map<String, Object>> users = new ArrayList<>();
-        String sql = "SELECT user_id, username, password, interest FROM users ORDER BY user_id DESC LIMIT ? OFFSET ?";
+        String sql = "SELECT user_id, username, password, interest, frequency FROM users ORDER BY user_id DESC LIMIT ? OFFSET ?";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setInt(1, pageSize);
             stmt.setInt(2, (page - 1) * pageSize);
@@ -265,6 +269,7 @@ public class Dbmanager {
                     user.put("username", rs.getString("username"));
                     user.put("password", rs.getString("password"));
                     user.put("interest", rs.getString("interest"));
+                    user.put("frequency", rs.getInt("frequency"));
                     users.add(user);
                 }
             }
@@ -279,6 +284,18 @@ public class Dbmanager {
         String sql = "UPDATE users SET interest = ? WHERE user_id = ?";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setString(1, interest);
+            stmt.setInt(2, userId);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+
+    /**
+     * 更新用户推荐频率
+     */
+    public boolean updateUserFrequency(int userId, int frequency) throws SQLException {
+        String sql = "UPDATE users SET frequency = ? WHERE user_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, frequency);
             stmt.setInt(2, userId);
             return stmt.executeUpdate() > 0;
         }
@@ -446,5 +463,88 @@ public class Dbmanager {
             }
         }
         return null;
+    }
+
+    // ========== Interest Embeddings 表操作 ==========
+
+    /**
+     * 插入或更新用户兴趣向量嵌入
+     * @param userId 用户ID
+     * @param embeddingJson 向量JSON字符串
+     * @param dimension 向量维度
+     * @return 是否成功
+     * @throws SQLException 如果数据库操作失败
+     */
+    public boolean insertOrUpdateInterestEmbedding(int userId, String embeddingJson, int dimension) throws SQLException {
+        String sql = "INSERT INTO interest_embeddings (user_id, embedding, dimension, created_at) " +
+                     "VALUES (?, ?, ?, NOW()) " +
+                     "ON DUPLICATE KEY UPDATE embedding = ?, dimension = ?, updated_at = NOW()";
+
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, embeddingJson);
+            stmt.setInt(3, dimension);
+            stmt.setString(4, embeddingJson);
+            stmt.setInt(5, dimension);
+
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0;
+        }
+    }
+
+    /**
+     * 检查用户兴趣是否已建立向量索引
+     * @param userId 用户ID
+     * @return 是否已建立索引
+     * @throws SQLException 如果数据库查询失败
+     */
+    public boolean isUserInterestIndexed(int userId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM interest_embeddings WHERE user_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("count") > 0;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 获取用户兴趣向量嵌入
+     * @param userId 用户ID
+     * @return 向量数据Map，包含embedding和dimension
+     * @throws SQLException 如果数据库查询失败
+     */
+    public Map<String, Object> getUserInterestEmbedding(int userId) throws SQLException {
+        String sql = "SELECT embedding, dimension, created_at FROM interest_embeddings WHERE user_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Map<String, Object> embedding = new HashMap<>();
+                    embedding.put("embedding", rs.getString("embedding"));
+                    embedding.put("dimension", rs.getInt("dimension"));
+                    embedding.put("created_at", rs.getTimestamp("created_at"));
+                    return embedding;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 删除用户兴趣向量嵌入
+     * @param userId 用户ID
+     * @return 是否成功
+     * @throws SQLException 如果数据库操作失败
+     */
+    public boolean deleteUserInterestEmbedding(int userId) throws SQLException {
+        String sql = "DELETE FROM interest_embeddings WHERE user_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            return stmt.executeUpdate() > 0;
+        }
     }
 }

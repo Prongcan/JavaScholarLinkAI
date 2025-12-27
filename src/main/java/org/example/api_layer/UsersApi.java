@@ -2,6 +2,7 @@ package org.example.api_layer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.data_access_layer.Dbmanager;
+import org.example.service.IndexService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -28,12 +29,21 @@ import java.util.Map;
 public class UsersApi extends HttpServlet {
     private Dbmanager dbManager;
     private ObjectMapper objectMapper;
+    private IndexService indexService;
     
     @Override
     public void init() throws ServletException {
         super.init();
         dbManager = new Dbmanager();
         objectMapper = new ObjectMapper();
+
+        try {
+            indexService = new IndexService();
+            System.out.println("✅ IndexService initialized for user interest embeddings");
+        } catch (Exception e) {
+            System.err.println("❌ Failed to initialize IndexService: " + e.getMessage());
+            throw new ServletException("Failed to initialize IndexService", e);
+        }
     }
     
     @Override
@@ -65,6 +75,14 @@ public class UsersApi extends HttpServlet {
                     try {
                         int userId = Integer.parseInt(pathParts[0]);
                         handleGetUserInterest(userId, response, out);
+                    } catch (NumberFormatException e) {
+                        sendError(response, out, 400, "Invalid user ID format");
+                    }
+                } else if (pathParts.length == 2 && pathParts[1].equals("frequency")) {
+                    // GET /api/users/{userId}/frequency - 获取用户推荐频率
+                    try {
+                        int userId = Integer.parseInt(pathParts[0]);
+                        handleGetUserFrequency(userId, response, out);
                     } catch (NumberFormatException e) {
                         sendError(response, out, 400, "Invalid user ID format");
                     }
@@ -121,6 +139,14 @@ public class UsersApi extends HttpServlet {
                     try {
                         int userId = Integer.parseInt(pathParts[0]);
                         handleUpdateUserInterest(userId, request, response, out);
+                    } catch (NumberFormatException e) {
+                        sendError(response, out, 400, "Invalid user ID format");
+                    }
+                } else if (pathParts.length == 2 && pathParts[1].equals("frequency")) {
+                    // PUT /api/users/{userId}/frequency - 更新用户推荐频率
+                    try {
+                        int userId = Integer.parseInt(pathParts[0]);
+                        handleUpdateUserFrequency(userId, request, response, out);
                     } catch (NumberFormatException e) {
                         sendError(response, out, 400, "Invalid user ID format");
                     }
@@ -325,15 +351,15 @@ public class UsersApi extends HttpServlet {
     /**
      * 处理获取用户兴趣
      */
-    private void handleGetUserInterest(int userId, HttpServletResponse response, 
+    private void handleGetUserInterest(int userId, HttpServletResponse response,
                                        PrintWriter out) throws SQLException, IOException {
         Map<String, Object> user = dbManager.getUserById(userId);
-        
+
         if (user == null) {
             sendError(response, out, 404, "User not found");
             return;
         }
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("status", "success");
         result.put("message", "获取用户兴趣成功");
@@ -341,7 +367,42 @@ public class UsersApi extends HttpServlet {
         data.put("user_id", userId);
         data.put("interest", user.get("interest"));
         result.put("data", data);
-        
+
+        out.print(objectMapper.writeValueAsString(result));
+        out.flush();
+    }
+
+    /**
+     * 处理获取用户推荐频率
+     */
+    @Operation(
+        summary = "获取用户推荐频率",
+        description = "根据用户 ID 获取用户推荐频率",
+        parameters = {
+            @Parameter(name = "userId", description = "用户 ID", required = true, schema = @Schema(type = "integer"))
+        },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "成功获取用户推荐频率"),
+            @ApiResponse(responseCode = "404", description = "用户不存在")
+        }
+    )
+    private void handleGetUserFrequency(int userId, HttpServletResponse response,
+                                       PrintWriter out) throws SQLException, IOException {
+        Map<String, Object> user = dbManager.getUserById(userId);
+
+        if (user == null) {
+            sendError(response, out, 404, "User not found");
+            return;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", "success");
+        result.put("message", "获取用户推荐频率成功");
+        Map<String, Object> data = new HashMap<>();
+        data.put("user_id", userId);
+        data.put("frequency", user.get("frequency"));
+        result.put("data", data);
+
         out.print(objectMapper.writeValueAsString(result));
         out.flush();
     }
@@ -395,8 +456,11 @@ public class UsersApi extends HttpServlet {
         }
         
         boolean updated = dbManager.updateUserInterest(userId, interest);
-        
+
         if (updated) {
+            // 异步生成用户兴趣的向量嵌入
+            generateUserInterestEmbeddingAsync(userId, interest);
+
             Map<String, Object> result = new HashMap<>();
             result.put("status", "success");
             result.put("message", "更新用户兴趣成功");
@@ -404,7 +468,7 @@ public class UsersApi extends HttpServlet {
             data.put("user_id", userId);
             data.put("interest", interest);
             result.put("data", data);
-            
+
             out.print(objectMapper.writeValueAsString(result));
         } else {
             sendError(response, out, 404, "User not found");
@@ -441,11 +505,133 @@ public class UsersApi extends HttpServlet {
         }
         out.flush();
     }
-    
+
+    /**
+     * 处理更新用户推荐频率
+     */
+    @Operation(
+        summary = "更新用户推荐频率",
+        description = "更新指定用户的推荐频率",
+        parameters = {
+            @Parameter(name = "userId", description = "用户 ID", required = true, schema = @Schema(type = "integer"))
+        },
+        requestBody = @RequestBody(
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(
+                    type = "object"
+                )
+            )
+        ),
+        responses = {
+            @ApiResponse(responseCode = "200", description = "更新成功"),
+            @ApiResponse(responseCode = "404", description = "用户不存在"),
+            @ApiResponse(responseCode = "400", description = "请求参数错误")
+        }
+    )
+    private void handleUpdateUserFrequency(int userId, HttpServletRequest request,
+                                         HttpServletResponse response, PrintWriter out)
+            throws IOException, SQLException {
+        BufferedReader reader = request.getReader();
+        StringBuilder jsonBody = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            jsonBody.append(line);
+        }
+
+        Map<String, Object> requestData;
+        try {
+            requestData = objectMapper.readValue(jsonBody.toString(), Map.class);
+        } catch (Exception e) {
+            sendError(response, out, 400, "Invalid JSON format");
+            return;
+        }
+
+        Object frequencyObj = requestData.get("frequency");
+        if (frequencyObj == null) {
+            sendError(response, out, 400, "Frequency is required");
+            return;
+        }
+
+        int frequency;
+        try {
+            if (frequencyObj instanceof Integer) {
+                frequency = (Integer) frequencyObj;
+            } else if (frequencyObj instanceof String) {
+                frequency = Integer.parseInt((String) frequencyObj);
+            } else {
+                sendError(response, out, 400, "Frequency must be a valid integer");
+                return;
+            }
+        } catch (NumberFormatException e) {
+            sendError(response, out, 400, "Frequency must be a valid integer");
+            return;
+        }
+
+        // 验证频率值是否有效（只允许1、6、12、24小时）
+        if (frequency != 1 && frequency != 6 && frequency != 12 && frequency != 24) {
+            sendError(response, out, 400, "Frequency must be 1, 6, 12, or 24 hours");
+            return;
+        }
+
+        boolean updated = dbManager.updateUserFrequency(userId, frequency);
+
+        if (updated) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "success");
+            result.put("message", "更新用户推荐频率成功");
+            Map<String, Object> data = new HashMap<>();
+            data.put("user_id", userId);
+            data.put("frequency", frequency);
+            result.put("data", data);
+
+            out.print(objectMapper.writeValueAsString(result));
+        } else {
+            sendError(response, out, 404, "User not found");
+        }
+        out.flush();
+    }
+
+    /**
+     * 异步生成用户兴趣向量嵌入
+     * @param userId 用户ID
+     * @param interest 用户兴趣文本
+     */
+    private void generateUserInterestEmbeddingAsync(int userId, String interest) {
+        // 启动异步线程生成向量嵌入
+        Thread embeddingThread = new Thread(() -> {
+            try {
+                System.out.println("🔄 Starting async embedding generation for user " + userId);
+
+                // 使用IndexService生成向量
+                List<Double> embedding = indexService.generateEmbedding(interest);
+
+                // 将向量转换为JSON字符串
+                String embeddingJson = objectMapper.writeValueAsString(embedding);
+
+                // 存储到interest_embeddings表
+                boolean success = dbManager.insertOrUpdateInterestEmbedding(userId, embeddingJson, embedding.size());
+
+                if (success) {
+                    System.out.println("✅ Successfully generated and stored interest embedding for user " + userId);
+                } else {
+                    System.err.println("❌ Failed to store interest embedding for user " + userId);
+                }
+
+            } catch (Exception e) {
+                System.err.println("❌ Error generating interest embedding for user " + userId + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+
+        embeddingThread.setDaemon(true); // 设置为守护线程
+        embeddingThread.start();
+    }
+
     /**
      * 发送错误响应
      */
-    private void sendError(HttpServletResponse response, PrintWriter out, 
+    private void sendError(HttpServletResponse response, PrintWriter out,
                           int statusCode, String message) throws IOException {
         response.setStatus(statusCode);
         Map<String, Object> error = new HashMap<>();

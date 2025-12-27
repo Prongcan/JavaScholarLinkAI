@@ -77,8 +77,8 @@ public class RecommendationOrchestrator {
                         continue;
                     }
 
-                    // 生成用户兴趣的向量
-                    List<Double> userInterestVector = generateInterestVector(interest);
+                    // 生成用户兴趣的向量（优先从缓存获取）
+                    List<Double> userInterestVector = generateInterestVector(userId, interest);
 
                     // 计算与所有论文的相似度，获取top3
                     List<PaperSimilarity> topSimilarPapers = findTopSimilarPapers(userInterestVector, indexedPapers, 3);
@@ -110,18 +110,39 @@ public class RecommendationOrchestrator {
     }
 
     /**
-     * 生成用户兴趣的向量表示
+     * 生成用户兴趣的向量表示（优先从缓存获取）
+     * @param userId 用户ID
      * @param interest 用户兴趣字符串
      * @return 向量列表
      */
-    private List<Double> generateInterestVector(String interest) throws IOException {
-        System.out.println("   🔄 Generating vector for interest: " + interest);
+    private List<Double> generateInterestVector(int userId, String interest) throws Exception {
+        System.out.println("   🔄 Getting vector for user " + userId + " interest: " + interest);
 
-        // 使用IndexService生成向量（复用相同的逻辑）
-        // 由于IndexService是为论文设计的，我们需要临时创建一个模拟的论文向量
-        // 这里直接调用Gemini API为兴趣文本生成向量
+        // 首先尝试从interest_embeddings表获取已缓存的向量
+        if (dbManager.isUserInterestIndexed(userId)) {
+            System.out.println("   📋 Found cached interest embedding for user " + userId);
+            Map<String, Object> embeddingData = dbManager.getUserInterestEmbedding(userId);
+            if (embeddingData != null) {
+                String embeddingJson = (String) embeddingData.get("embedding");
+                return parseEmbeddingJson(embeddingJson);
+            }
+        }
 
-        return indexService.generateEmbedding(interest);
+        // 如果没有缓存的向量，则实时生成并存储
+        System.out.println("   🆕 No cached embedding found, generating new one for user " + userId);
+        List<Double> embedding = indexService.generateEmbedding(interest);
+
+        // 将生成的向量存储到interest_embeddings表
+        String embeddingJson = objectMapper.writeValueAsString(embedding);
+        boolean stored = dbManager.insertOrUpdateInterestEmbedding(userId, embeddingJson, embedding.size());
+
+        if (stored) {
+            System.out.println("   💾 Successfully cached interest embedding for user " + userId);
+        } else {
+            System.err.println("   ⚠️ Failed to cache interest embedding for user " + userId);
+        }
+
+        return embedding;
     }
 
     /**
