@@ -20,6 +20,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -83,6 +84,14 @@ public class UsersApi extends HttpServlet {
                     try {
                         int userId = Integer.parseInt(pathParts[0]);
                         handleGetUserFrequency(userId, response, out);
+                    } catch (NumberFormatException e) {
+                        sendError(response, out, 400, "Invalid user ID format");
+                    }
+                } else if (pathParts.length == 3 && pathParts[1].equals("interest") && pathParts[2].equals("history")) {
+                    // GET /api/users/{userId}/interest/history - 获取用户兴趣变迁数据
+                    try {
+                        int userId = Integer.parseInt(pathParts[0]);
+                        handleGetUserInterestHistory(userId, response, out);
                     } catch (NumberFormatException e) {
                         sendError(response, out, 400, "Invalid user ID format");
                     }
@@ -406,6 +415,106 @@ public class UsersApi extends HttpServlet {
         out.print(objectMapper.writeValueAsString(result));
         out.flush();
     }
+
+    /**
+     * 处理获取用户兴趣变迁数据
+     */
+    @Operation(
+        summary = "获取用户兴趣变迁数据",
+        description = "获取用户兴趣的历史变迁数据，包括相似度时间序列",
+        parameters = {
+            @Parameter(name = "userId", description = "用户 ID", required = true, schema = @Schema(type = "integer"))
+        },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "成功获取用户兴趣变迁数据"),
+            @ApiResponse(responseCode = "404", description = "用户不存在")
+        }
+    )
+    private void handleGetUserInterestHistory(int userId, HttpServletResponse response,
+                                             PrintWriter out) throws SQLException, IOException {
+        Map<String, Object> user = dbManager.getUserById(userId);
+
+        if (user == null) {
+            sendError(response, out, 404, "User not found");
+            return;
+        }
+
+        // 获取用户兴趣历史记录
+        List<Map<String, Object>> history = dbManager.getUserInterestHistory(userId);
+
+        if (history.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "success");
+            result.put("message", "用户暂无兴趣历史记录");
+            Map<String, Object> data = new HashMap<>();
+            data.put("user_id", userId);
+            data.put("history", new java.util.ArrayList<>());
+            result.put("data", data);
+
+            out.print(objectMapper.writeValueAsString(result));
+            out.flush();
+            return;
+        }
+
+        // 计算相似度时间序列
+        List<Map<String, Object>> similarityData = calculateInterestSimilaritySeries(history);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", "success");
+        result.put("message", "获取用户兴趣变迁数据成功");
+        Map<String, Object> data = new HashMap<>();
+        data.put("user_id", userId);
+        data.put("total_records", history.size());
+        data.put("similarity_series", similarityData);
+        result.put("data", data);
+
+        out.print(objectMapper.writeValueAsString(result));
+        out.flush();
+    }
+
+    /**
+     * 计算兴趣相似度时间序列
+     * @param history 用户兴趣历史记录
+     * @return 相似度数据列表，每个元素包含时间戳和相似度
+     */
+    private List<Map<String, Object>> calculateInterestSimilaritySeries(List<Map<String, Object>> history) {
+        List<Map<String, Object>> series = new java.util.ArrayList<>();
+
+        if (history.size() < 2) {
+            // 如果只有一条记录，相似度为1.0（与自己比较）
+            Map<String, Object> point = new HashMap<>();
+            point.put("timestamp", ((java.sql.Timestamp) history.get(0).get("created_at")).getTime());
+            point.put("similarity", 1.0);
+            point.put("date", history.get(0).get("created_at").toString());
+            series.add(point);
+            return series;
+        }
+
+        try {
+            // 获取最新的embedding作为基准
+            String latestEmbeddingJson = (String) history.get(history.size() - 1).get("embedding");
+            List<Double> latestEmbedding = indexService.parseEmbeddingJson(latestEmbeddingJson);
+
+            // 计算每条历史记录与最新记录的相似度
+            for (Map<String, Object> record : history) {
+                String embeddingJson = (String) record.get("embedding");
+                List<Double> embedding = indexService.parseEmbeddingJson(embeddingJson);
+
+                double similarity = indexService.calculateCosineSimilarity(embedding, latestEmbedding);
+
+                Map<String, Object> point = new HashMap<>();
+                point.put("timestamp", ((java.sql.Timestamp) record.get("created_at")).getTime());
+                point.put("similarity", Math.round(similarity * 1000.0) / 1000.0); // 保留3位小数
+                point.put("date", record.get("created_at").toString());
+                series.add(point);
+            }
+        } catch (Exception e) {
+            System.err.println("Error calculating interest similarity: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return series;
+    }
     
     /**
      * 处理更新用户兴趣
@@ -458,12 +567,12 @@ public class UsersApi extends HttpServlet {
         boolean updated = dbManager.updateUserInterest(userId, interest);
 
         if (updated) {
-            // 异步生成用户兴趣的向量嵌入
+            // 异步生成用户兴趣的向量嵌入（插入历史记录）
             generateUserInterestEmbeddingAsync(userId, interest);
 
             Map<String, Object> result = new HashMap<>();
             result.put("status", "success");
-            result.put("message", "更新用户兴趣成功");
+            result.put("message", "更新用户兴趣成功，已保存到历史记录");
             Map<String, Object> data = new HashMap<>();
             data.put("user_id", userId);
             data.put("interest", interest);
@@ -609,8 +718,8 @@ public class UsersApi extends HttpServlet {
                 // 将向量转换为JSON字符串
                 String embeddingJson = objectMapper.writeValueAsString(embedding);
 
-                // 存储到interest_embeddings表
-                boolean success = dbManager.insertOrUpdateInterestEmbedding(userId, embeddingJson, embedding.size());
+                // 存储到interest_embeddings表（作为历史记录）
+                boolean success = dbManager.insertInterestEmbedding(userId, embeddingJson, embedding.size());
 
                 if (success) {
                     System.out.println("✅ Successfully generated and stored interest embedding for user " + userId);

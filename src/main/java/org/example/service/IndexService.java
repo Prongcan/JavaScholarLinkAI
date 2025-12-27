@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.Arrays;
 
 /**
  * 索引服务
@@ -237,5 +238,43 @@ public class IndexService {
         }
 
         return successCount;
+    }
+
+    /**
+     * 计算两个向量的余弦相似度
+     * @param vector1 第一个向量
+     * @param vector2 第二个向量
+     * @return 相似度分数 (0-1之间，1表示完全相同)
+     */
+    public double calculateCosineSimilarity(List<Double> vector1, List<Double> vector2) {
+        if (vector1 == null || vector2 == null || vector1.size() != vector2.size()) {
+            throw new IllegalArgumentException("Vectors must be non-null and have the same dimension");
+        }
+
+        double dotProduct = 0.0;
+        double norm1 = 0.0;
+        double norm2 = 0.0;
+
+        for (int i = 0; i < vector1.size(); i++) {
+            dotProduct += vector1.get(i) * vector2.get(i);
+            norm1 += vector1.get(i) * vector1.get(i);
+            norm2 += vector2.get(i) * vector2.get(i);
+        }
+
+        if (norm1 == 0.0 || norm2 == 0.0) {
+            return 0.0; // 避免除零错误
+        }
+
+        return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    }
+
+    /**
+     * 从JSON字符串解析向量
+     * @param embeddingJson 向量JSON字符串
+     * @return 向量列表
+     * @throws IOException 如果解析失败
+     */
+    public List<Double> parseEmbeddingJson(String embeddingJson) throws IOException {
+        return Arrays.asList(objectMapper.readValue(embeddingJson, Double[].class));
     }
 }

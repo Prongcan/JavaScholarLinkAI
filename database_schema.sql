@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_paper_embeddings_paper ON paper_embeddings(paper_
 ALTER TABLE users ADD COLUMN frequency INT DEFAULT 24 COMMENT '推荐频率，单位为小时';
 
 -- ScholarLinkAI 用户兴趣向量嵌入表
--- 用于存储用户兴趣的向量表示，提高推荐性能
+-- 用于存储用户兴趣的历史记录向量表示，提高推荐性能
 
 CREATE TABLE IF NOT EXISTS interest_embeddings (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS interest_embeddings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    INDEX idx_user_id (user_id)
+    INDEX idx_user_id (user_id),
+    INDEX idx_created_at (created_at)
 );
 
 COMMIT;

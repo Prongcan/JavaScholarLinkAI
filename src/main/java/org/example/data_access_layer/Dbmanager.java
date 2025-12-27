@@ -337,49 +337,19 @@ public class Dbmanager {
     }
 
     /**
-     * 获取用户的推荐记录, 可根据兴趣进行筛选
+     * 获取用户的推荐记录，直接返回所有推荐（不再根据兴趣筛选）
      */
     public List<Map<String, Object>> getRecommendationsByUserId(int userId, String interests) throws SQLException {
         List<Map<String, Object>> recommendations = new ArrayList<>();
-        
-        StringBuilder sql = new StringBuilder(
-            "SELECT r.id, r.user_id, r.paper_id, r.blog, r.created_at, p.title, p.author " +
-            "FROM recommendations r " +
-            "JOIN papers p ON r.paper_id = p.paper_id " +
-            "WHERE r.user_id = ?"
-        );
 
-        List<String> interestKeywords = new ArrayList<>();
-        if (interests != null && !interests.trim().isEmpty()) {
-            String[] keywords = interests.split("[,\\s]+"); // 按逗号或空格分割
-            
-            if (keywords.length > 0) {
-                sql.append(" AND (");
-                for (int i = 0; i < keywords.length; i++) {
-                    String keyword = keywords[i].trim();
-                    if (!keyword.isEmpty()) {
-                        interestKeywords.add(keyword);
-                        if (i > 0) {
-                            sql.append(" OR ");
-                        }
-                        sql.append("p.title LIKE ? OR p.abstract LIKE ?");
-                    }
-                }
-                sql.append(")");
-            }
-        }
-        
-        sql.append(" ORDER BY r.created_at DESC");
+        String sql = "SELECT r.id, r.user_id, r.paper_id, r.blog, r.created_at, p.title, p.author " +
+                     "FROM recommendations r " +
+                     "JOIN papers p ON r.paper_id = p.paper_id " +
+                     "WHERE r.user_id = ? " +
+                     "ORDER BY r.created_at DESC";
 
-        try (PreparedStatement stmt = getConnection().prepareStatement(sql.toString())) {
-            int paramIndex = 1;
-            stmt.setInt(paramIndex++, userId);
-            
-            for (String keyword : interestKeywords) {
-                String searchPattern = "%" + keyword + "%";
-                stmt.setString(paramIndex++, searchPattern);
-                stmt.setString(paramIndex++, searchPattern);
-            }
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -468,24 +438,21 @@ public class Dbmanager {
     // ========== Interest Embeddings 表操作 ==========
 
     /**
-     * 插入或更新用户兴趣向量嵌入
+     * 插入用户兴趣向量嵌入（历史记录）
      * @param userId 用户ID
      * @param embeddingJson 向量JSON字符串
      * @param dimension 向量维度
      * @return 是否成功
      * @throws SQLException 如果数据库操作失败
      */
-    public boolean insertOrUpdateInterestEmbedding(int userId, String embeddingJson, int dimension) throws SQLException {
+    public boolean insertInterestEmbedding(int userId, String embeddingJson, int dimension) throws SQLException {
         String sql = "INSERT INTO interest_embeddings (user_id, embedding, dimension, created_at) " +
-                     "VALUES (?, ?, ?, NOW()) " +
-                     "ON DUPLICATE KEY UPDATE embedding = ?, dimension = ?, updated_at = NOW()";
+                     "VALUES (?, ?, ?, NOW())";
 
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setInt(1, userId);
             stmt.setString(2, embeddingJson);
             stmt.setInt(3, dimension);
-            stmt.setString(4, embeddingJson);
-            stmt.setInt(5, dimension);
 
             int rowsAffected = stmt.executeUpdate();
             return rowsAffected > 0;
@@ -512,13 +479,13 @@ public class Dbmanager {
     }
 
     /**
-     * 获取用户兴趣向量嵌入
+     * 获取用户最新的兴趣向量嵌入
      * @param userId 用户ID
      * @return 向量数据Map，包含embedding和dimension
      * @throws SQLException 如果数据库查询失败
      */
     public Map<String, Object> getUserInterestEmbedding(int userId) throws SQLException {
-        String sql = "SELECT embedding, dimension, created_at FROM interest_embeddings WHERE user_id = ?";
+        String sql = "SELECT embedding, dimension, created_at FROM interest_embeddings WHERE user_id = ? ORDER BY created_at DESC LIMIT 1";
         try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
             stmt.setInt(1, userId);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -532,6 +499,52 @@ public class Dbmanager {
             }
         }
         return null;
+    }
+
+    /**
+     * 获取用户所有的兴趣历史记录
+     * @param userId 用户ID
+     * @return 兴趣历史记录列表，每个记录包含embedding、dimension和created_at
+     * @throws SQLException 如果数据库查询失败
+     */
+    public List<Map<String, Object>> getUserInterestHistory(int userId) throws SQLException {
+        String sql = "SELECT embedding, dimension, created_at FROM interest_embeddings WHERE user_id = ? ORDER BY created_at ASC";
+        List<Map<String, Object>> history = new ArrayList<>();
+
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> embedding = new HashMap<>();
+                    embedding.put("embedding", rs.getString("embedding"));
+                    embedding.put("dimension", rs.getInt("dimension"));
+                    embedding.put("created_at", rs.getTimestamp("created_at"));
+                    history.add(embedding);
+                }
+            }
+        }
+        return history;
+    }
+
+    /**
+     * 检查用户是否已经收到过某个论文的推荐
+     * @param userId 用户ID
+     * @param paperId 论文ID
+     * @return 是否已推荐过
+     * @throws SQLException 如果数据库查询失败
+     */
+    public boolean isPaperAlreadyRecommended(int userId, int paperId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM recommendations WHERE user_id = ? AND paper_id = ?";
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
+            stmt.setInt(1, userId);
+            stmt.setInt(2, paperId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("count") > 0;
+                }
+            }
+        }
+        return false;
     }
 
     /**

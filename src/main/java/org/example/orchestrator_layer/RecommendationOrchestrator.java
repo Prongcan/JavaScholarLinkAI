@@ -80,8 +80,8 @@ public class RecommendationOrchestrator {
                     // 生成用户兴趣的向量（优先从缓存获取）
                     List<Double> userInterestVector = generateInterestVector(userId, interest);
 
-                    // 计算与所有论文的相似度，获取top3
-                    List<PaperSimilarity> topSimilarPapers = findTopSimilarPapers(userInterestVector, indexedPapers, 3);
+                    // 计算与所有论文的相似度，获取top3（排除已推荐过的论文）
+                    List<PaperSimilarity> topSimilarPapers = findTopSimilarPapers(userId, userInterestVector, indexedPapers, 3);
 
                     // 为top3论文生成推荐博客
                     for (PaperSimilarity paperSim : topSimilarPapers) {
@@ -132,9 +132,9 @@ public class RecommendationOrchestrator {
         System.out.println("   🆕 No cached embedding found, generating new one for user " + userId);
         List<Double> embedding = indexService.generateEmbedding(interest);
 
-        // 将生成的向量存储到interest_embeddings表
+        // 将生成的向量存储到interest_embeddings表（作为历史记录）
         String embeddingJson = objectMapper.writeValueAsString(embedding);
-        boolean stored = dbManager.insertOrUpdateInterestEmbedding(userId, embeddingJson, embedding.size());
+        boolean stored = dbManager.insertInterestEmbedding(userId, embeddingJson, embedding.size());
 
         if (stored) {
             System.out.println("   💾 Successfully cached interest embedding for user " + userId);
@@ -220,19 +220,29 @@ public class RecommendationOrchestrator {
     }
 
     /**
-     * 查找最相似的top N篇论文
+     * 查找最相似的top N篇论文（排除已推荐过的论文）
+     * @param userId 用户ID，用于去重检查
      * @param userVector 用户兴趣向量
      * @param papers 论文列表
      * @param topN 返回的top N数量
      * @return 最相似论文列表，按相似度降序排列
      */
-    private List<PaperSimilarity> findTopSimilarPapers(List<Double> userVector,
+    private List<PaperSimilarity> findTopSimilarPapers(int userId,
+                                                      List<Double> userVector,
                                                       List<Map<String, Object>> papers,
-                                                      int topN) throws IOException {
+                                                      int topN) throws Exception {
         List<PaperSimilarity> similarities = new ArrayList<>();
 
         for (Map<String, Object> paper : papers) {
             try {
+                int paperId = (Integer) paper.get("paper_id");
+
+                // 检查用户是否已经收到过此论文的推荐，如果是则跳过
+                if (dbManager.isPaperAlreadyRecommended(userId, paperId)) {
+                    System.out.println("   ⏭️ Skipping paper " + paperId + " - already recommended to user " + userId);
+                    continue;
+                }
+
                 @SuppressWarnings("unchecked")
                 Map<String, Object> embeddingData = (Map<String, Object>) paper.get("embedding");
                 String embeddingJson = (String) embeddingData.get("embedding");
@@ -240,7 +250,6 @@ public class RecommendationOrchestrator {
                 List<Double> paperVector = parseEmbeddingJson(embeddingJson);
                 double similarity = cosineSimilarity(userVector, paperVector);
 
-                int paperId = (Integer) paper.get("paper_id");
                 String title = (String) paper.get("title");
 
                 similarities.add(new PaperSimilarity(paperId, title, similarity));
@@ -253,8 +262,13 @@ public class RecommendationOrchestrator {
         // 按相似度降序排序
         similarities.sort((a, b) -> Double.compare(b.similarity, a.similarity));
 
-        // 返回top N
-        return similarities.subList(0, Math.min(topN, similarities.size()));
+        // 返回top N，如果不够则返回所有可用的
+        int actualTopN = Math.min(topN, similarities.size());
+        if (actualTopN < topN) {
+            System.out.println("   ℹ️ Only found " + actualTopN + " unrecommended papers for user " + userId + " (requested " + topN + ")");
+        }
+
+        return similarities.subList(0, actualTopN);
     }
 
     /**
