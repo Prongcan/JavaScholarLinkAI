@@ -56,6 +56,9 @@ public class PapersApi extends HttpServlet {
             if (pathInfo == null || pathInfo.equals("/") || pathInfo.equals("/list")) {
                 // GET /api/papers/list - 获取论文列表
                 handleListPapers(request, response, out);
+            } else if (pathInfo.equals("/recommendations")) {
+                // GET /api/papers/recommendations - 获取推荐博客
+                handleGetRecommendations(request, response, out);
             } else if (pathInfo.startsWith("/")) {
                 // GET /api/papers/{paperId} - 获取论文详情
                 String paperIdStr = pathInfo.substring(1);
@@ -104,6 +107,42 @@ public class PapersApi extends HttpServlet {
             e.printStackTrace();
             sendError(response, out, 500, "Database error: " + e.getMessage());
         }
+    }
+
+    /**
+     * 处理获取推荐博客
+     */
+    private void handleGetRecommendations(HttpServletRequest request, HttpServletResponse response,
+                                           PrintWriter out) throws SQLException, IOException {
+        String userIdParam = request.getParameter("userId");
+        if (userIdParam == null) {
+            sendError(response, out, 400, "User ID is required");
+            return;
+        }
+
+        try {
+            int userId = Integer.parseInt(userIdParam);
+            
+            // 获取用户信息以拿到其兴趣
+            Map<String, Object> user = dbManager.getUserById(userId);
+            String interests = "";
+            if (user != null && user.get("interest") != null) {
+                interests = (String) user.get("interest");
+            }
+
+            // 调用新的方法，传入用户兴趣
+            List<Map<String, Object>> recommendations = dbManager.getRecommendationsByUserId(userId, interests);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("status", "success");
+            result.put("message", "获取推荐成功");
+            result.put("data", recommendations);
+
+            out.print(objectMapper.writeValueAsString(result));
+        } catch (NumberFormatException e) {
+            sendError(response, out, 400, "Invalid User ID format");
+        }
+        out.flush();
     }
     
     /**

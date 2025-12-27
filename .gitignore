@@ -51,3 +51,7 @@ build/
 apache-tomcat-10.1.50/
 # Assignment PDF
 AY202526S1-50002870008-Assignment-C.pdf
+
+# Local scripts and env
+init_db.py
+.env

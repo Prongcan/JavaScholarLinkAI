@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>论文管理系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -262,6 +263,7 @@
             transform: translateY(-8px) scale(1.02);
             box-shadow: 0 15px 40px rgba(142, 68, 173, 0.25);
             border-color: #f39c12;
+            cursor: pointer;
         }
 
         .paper-header {
@@ -643,8 +645,9 @@
                     <span id="user-name">-</span>
                 </div>
                 <div class="user-detail">
-                    <span class="user-label">兴趣：</span>
-                    <span id="user-interest">-</span>
+                    <label for="interest-input" class="user-label">兴趣：</label>
+                    <input type="text" id="interest-input" class="form-input" style="margin-top: 5px; margin-bottom: 10px;">
+                    <button class="action-btn" onclick="saveInterests()">保存兴趣</button>
                 </div>
             </div>
         </div>
@@ -693,6 +696,19 @@
                 </div>
                 <button type="submit" class="submit-btn">注册</button>
             </form>
+        </div>
+    </div>
+
+    <!-- 博客详情模态框 -->
+    <div id="blog-detail-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <span class="close-btn" onclick="closeBlogDetailModal()">&times;</span>
+                <h2 id="blog-title-full" class="modal-title">博客详情</h2>
+            </div>
+            <div id="blog-content-full" class="paper-content" style="max-height: 70vh; overflow-y: auto;">
+                <!-- 博客内容将在这里被渲染 -->
+            </div>
         </div>
     </div>
 
@@ -785,73 +801,69 @@
             }
         }
 
-        // 加载论文列表 - 只加载第一页
+        // 加载推荐博客列表
         async function loadPapers(page = 1) {
-            currentPage = page;
             const loadingElement = document.getElementById('papers-loading');
             const gridElement = document.getElementById('papers-grid');
-
+            
             loadingElement.style.display = 'block';
             gridElement.innerHTML = '';
 
-            console.log('Loading papers for page:', page);
+            if (!currentUser) {
+                loadingElement.style.display = 'none';
+                showError('请先登录以查看推荐内容');
+                showTab('login');
+                return;
+            }
+
+            console.log('Loading recommendations for user:', currentUser.user_id);
 
             try {
-                // 固定只加载第一页，显示更多论文
-                const url = 'api/papers/list?page=1&page_size=50';
-                console.log('Fetching URL:', url);
-
+                const url = 'api/papers/recommendations?userId=' + currentUser.user_id;
                 const response = await fetch(url);
-                console.log('Response status:', response.status);
 
                 if (!response.ok) {
                     throw new Error('HTTP error! status: ' + response.status);
                 }
 
                 const data = await response.json();
-                console.log('Received data:', data);
-
                 loadingElement.style.display = 'none';
 
                 if (data.status === 'success') {
-                    displayPapers(data.data.papers);
-                    // 第一页不显示分页
-                    // updatePagination(data.data.page, data.data.page_size, data.data.total || data.data.papers.length * 5);
+                    displayPapers(data.data); // Renamed for consistency, handles recommendations
                 } else {
-                    showError('加载论文失败：' + data.message);
+                    showError('加载推荐失败：' + data.message);
                 }
             } catch (error) {
                 loadingElement.style.display = 'none';
                 showError('网络错误，请稍后重试: ' + error.message);
-                console.error('Error loading papers:', error);
+                console.error('Error loading recommendations:', error);
             }
         }
 
-        // 显示论文卡片
-        function displayPapers(papers) {
+        // 显示推荐博客卡片
+        function displayPapers(recommendations) {
             const gridElement = document.getElementById('papers-grid');
+            gridElement.innerHTML = ''; // 清空旧内容
 
-            if (papers.length === 0) {
-                gridElement.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: #7f8c8d;">
-                        <h3>暂无论文数据</h3>
-                        <p>数据库中还没有论文，可以通过API添加论文数据。</p>
-                        <button onclick="addSampleData()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                            添加示例数据
-                        </button>
-                    </div>
-                `;
+            if (!recommendations || recommendations.length === 0) {
+                gridElement.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: #7f8c8d;"><h3>暂无推荐内容</h3><p>系统还没有为您生成任何推荐。</p></div>';
                 return;
             }
 
-            papers.forEach(paper => {
+            recommendations.forEach(rec => {
                 const paperCard = document.createElement('div');
                 paperCard.className = 'paper-card';
 
-                const title = paper.title || '无标题';
-                const author = paper.author || '未知';
-                const abstract = paper.abstract || '暂无摘要';
-                const pdfLink = paper.pdf_url ? '<a href="' + paper.pdf_url + '" target="_blank" class="action-btn">查看PDF</a>' : '';
+                const title = rec.paper_title || '无标题';
+                const author = rec.paper_author || '未知来源';
+                const blogContent = rec.blog || '';
+                const summary = blogContent.substring(0, 150) + (blogContent.length > 150 ? '...' : '');
+
+                // Store full content in data attributes for the modal
+                paperCard.setAttribute('data-title', title);
+                paperCard.setAttribute('data-blog', blogContent);
+                paperCard.onclick = function() { showBlogDetail(this); };
 
                 paperCard.innerHTML = `
                     <div class="paper-header">
@@ -859,11 +871,7 @@
                         <div class="paper-author">作者：` + escapeHtml(author) + `</div>
                     </div>
                     <div class="paper-content">
-                        <div class="paper-abstract">` + escapeHtml(abstract) + `</div>
-                        <div class="paper-actions">
-                            ` + pdfLink + `
-                            <a href="#" onclick="viewPaperDetail(` + paper.paper_id + `)" class="action-btn">详情</a>
-                        </div>
+                        <div class="paper-abstract">` + marked.parse(summary) + `</div>
                     </div>
                 `;
 
@@ -937,12 +945,8 @@
                 loadingElement.style.display = 'none';
 
                 if (data.status === 'success') {
-                    const userNameElement = document.getElementById('user-name');
-                    const userInterestElement = document.getElementById('user-interest');
-
-                    if (userNameElement) userNameElement.textContent = data.data.username;
-                    if (userInterestElement) userInterestElement.textContent = data.data.interest || '未设置';
-
+                    document.getElementById('user-name').textContent = data.data.username;
+                    document.getElementById('interest-input').value = data.data.interest || ''; // Populate input field
                     contentElement.style.display = 'block';
                     console.log('User profile loaded successfully');
                 } else {
@@ -955,10 +959,60 @@
             }
         }
 
+        // 保存用户兴趣
+        async function saveInterests() {
+            if (!currentUser) {
+                showError('请先登录再保存兴趣');
+                return;
+            }
+
+            const interestInput = document.getElementById('interest-input');
+            const newInterest = interestInput.value.trim();
+            console.log('Saving new interest:', newInterest);
+
+            try {
+                const response = await fetch('api/users/' + currentUser.user_id + '/interest', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        interest: newInterest
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showError('兴趣保存成功！', false);
+                } else {
+                    showError('保存失败：' + data.message);
+                }
+            } catch (error) {
+                showError('网络错误，请稍后重试');
+                console.error('Error saving interests:', error);
+            }
+        }
+
         // 查看论文详情
         function viewPaperDetail(paperId) {
             // 这里可以实现跳转到论文详情页或打开模态框
             alert('查看论文详情：' + paperId);
+        }
+
+        // 显示博客详情模态框
+        function showBlogDetail(cardElement) {
+            const title = cardElement.getAttribute('data-title');
+            const blogContent = cardElement.getAttribute('data-blog');
+
+            document.getElementById('blog-title-full').textContent = title;
+            document.getElementById('blog-content-full').innerHTML = marked.parse(blogContent || '');
+            document.getElementById('blog-detail-modal').style.display = 'block';
+        }
+
+        // 关闭博客详情模态框
+        function closeBlogDetailModal() {
+            document.getElementById('blog-detail-modal').style.display = 'none';
         }
 
         // 显示注册模态框
@@ -1061,9 +1115,13 @@
 
         // 点击模态框外部关闭
         window.onclick = function(event) {
-            const modal = document.getElementById('register-modal');
-            if (event.target === modal) {
+            const registerModal = document.getElementById('register-modal');
+            const blogModal = document.getElementById('blog-detail-modal');
+            if (event.target === registerModal) {
                 closeRegisterModal();
+            }
+            if (event.target === blogModal) {
+                closeBlogDetailModal();
             }
         }
     </script>

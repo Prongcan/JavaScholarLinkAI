@@ -320,16 +320,50 @@ public class Dbmanager {
     }
 
     /**
-     * 获取用户的推荐记录
+     * 获取用户的推荐记录, 可根据兴趣进行筛选
      */
-    public List<Map<String, Object>> getRecommendationsByUserId(int userId) throws SQLException {
+    public List<Map<String, Object>> getRecommendationsByUserId(int userId, String interests) throws SQLException {
         List<Map<String, Object>> recommendations = new ArrayList<>();
-        String sql = "SELECT r.id, r.user_id, r.paper_id, r.blog, r.created_at, " +
-                     "p.title, p.author FROM recommendations r " +
-                     "LEFT JOIN papers p ON r.paper_id = p.paper_id " +
-                     "WHERE r.user_id = ? ORDER BY r.created_at DESC";
-        try (PreparedStatement stmt = getConnection().prepareStatement(sql)) {
-            stmt.setInt(1, userId);
+        
+        StringBuilder sql = new StringBuilder(
+            "SELECT r.id, r.user_id, r.paper_id, r.blog, r.created_at, p.title, p.author " +
+            "FROM recommendations r " +
+            "JOIN papers p ON r.paper_id = p.paper_id " +
+            "WHERE r.user_id = ?"
+        );
+
+        List<String> interestKeywords = new ArrayList<>();
+        if (interests != null && !interests.trim().isEmpty()) {
+            String[] keywords = interests.split("[,\\s]+"); // 按逗号或空格分割
+            
+            if (keywords.length > 0) {
+                sql.append(" AND (");
+                for (int i = 0; i < keywords.length; i++) {
+                    String keyword = keywords[i].trim();
+                    if (!keyword.isEmpty()) {
+                        interestKeywords.add(keyword);
+                        if (i > 0) {
+                            sql.append(" OR ");
+                        }
+                        sql.append("p.title LIKE ? OR p.abstract LIKE ?");
+                    }
+                }
+                sql.append(")");
+            }
+        }
+        
+        sql.append(" ORDER BY r.created_at DESC");
+
+        try (PreparedStatement stmt = getConnection().prepareStatement(sql.toString())) {
+            int paramIndex = 1;
+            stmt.setInt(paramIndex++, userId);
+            
+            for (String keyword : interestKeywords) {
+                String searchPattern = "%" + keyword + "%";
+                stmt.setString(paramIndex++, searchPattern);
+                stmt.setString(paramIndex++, searchPattern);
+            }
+
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> rec = new HashMap<>();
